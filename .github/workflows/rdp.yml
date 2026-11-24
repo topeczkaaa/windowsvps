@@ -22,13 +22,32 @@ jobs:
           Expand-Archive -Path "ngrok.zip" -DestinationPath "."
 
           .\ngrok.exe config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
-          Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389"
+          Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389 --log=stdout" -WindowStyle Hidden
 
       - name: Odczyt adresu IP i portu
         run: |
-          Start-Sleep -Seconds 5
-          $tunnels = (Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels").tunnels
-          $public_url = $tunnels[0].public_url
+          $maxAttempts = 15
+          $attempt = 0
+          $public_url = $null
+
+          while ($attempt -lt $maxAttempts -and [string]::IsNullOrEmpty($public_url)) {
+              Start-Sleep -Seconds 3
+              $attempt++
+              try {
+                  $response = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels" -ErrorAction Stop
+                  if ($response.tunnels -and $response.tunnels.Count -gt 0) {
+                      $public_url = $response.tunnels[0].public_url
+                  }
+              } catch {
+                  Write-Host "Oczekiwanie na tunel Ngrok... (proba $attempt/$maxAttempts)"
+              }
+          }
+
+          if ([string]::IsNullOrEmpty($public_url)) {
+              Write-Error "Nie udalo sie zestawic tunelu Ngrok. Sprawdz czy NGROK_AUTH_TOKEN jest poprawny."
+              exit 1
+          }
+
           Write-Host "=========================================="
           Write-Host "ADRES DO ZDALNEGO PULPITU:"
           Write-Host $public_url
