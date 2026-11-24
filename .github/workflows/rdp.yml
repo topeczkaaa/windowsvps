@@ -1,4 +1,4 @@
-name: Windows RDP
+name: Windows RDP (Tailscale)
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: Konfiguracja Ngrok i RDP
+      - name: Wlaczenie Remote Desktop
         run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
@@ -18,44 +18,24 @@ jobs:
           $Password = ConvertTo-SecureString "TwojeMocneHaslo123!" -AsPlainText -Force
           Set-LocalUser -Name "runneradmin" -Password $Password
 
-          Invoke-WebRequest -Uri "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip" -OutFile "ngrok.zip"
-          Expand-Archive -Path "ngrok.zip" -DestinationPath "."
-
-          .\ngrok.exe config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
-          Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389 --log=stdout --log-format=term" -RedirectStandardOutput "ngrok.log" -RedirectStandardError "ngrok_err.log"
-
-      - name: Odczyt adresu IP i portu
+      - name: Instalacja i polaczenie Tailscale
+        shell: powershell
         run: |
-          $maxAttempts = 10
-          $attempt = 0
-          $public_url = $null
+          # Pobranie i cicha instalacja Tailscale
+          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile "tailscale-setup.exe"
+          Start-Process -FilePath ".\tailscale-setup.exe" -ArgumentList "/quiet" -Wait
 
-          while ($attempt -lt $maxAttempts -and [string]::IsNullOrEmpty($public_url)) {
-              Start-Sleep -Seconds 3
-              $attempt++
-              try {
-                  $response = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels" -ErrorAction Stop
-                  if ($response.tunnels -and $response.tunnels.Count -gt 0) {
-                      $public_url = $response.tunnels[0].public_url
-                  }
-              } catch {
-                  Write-Host "Oczekiwanie na tunel Ngrok... ($attempt/$maxAttempts)"
-              }
-          }
+          # Polaczenie z Twoja siecia Tailscale
+          $tailscalePath = "C:\Program Files\Tailscale\tailscale.exe"
+          & $tailscalePath up --authkey="${{ secrets.TS_AUTHKEY }}" --hostname="github-windows-vps"
 
-          if ([string]::IsNullOrEmpty($public_url)) {
-              Write-Host "=== LOGI NGROK ==="
-              if (Test-Path "ngrok.log") { Get-Content "ngrok.log" }
-              if (Test-Path "ngrok_err.log") { Get-Content "ngrok_err.log" }
-              Write-Error "Nie udalo sie zestawic tunelu."
-              exit 1
-          }
-
+          # Pobranie wewnetrznego adresu IP Tailscale
+          $tsIP = (& $tailscalePath ip -4)
           Write-Host "=========================================="
-          Write-Host "ADRES DO ZDALNEGO PULPITU:"
-          Write-Host $public_url
-          Write-Host "LOGIN: runneradmin"
-          Write-Host "HASLO: TwojeMocneHaslo123!"
+          Write-Host "PODLACZONO DO TAILSCALE!"
+          Write-Host "IP MASZYNY: $tsIP"
+          Write-Host "LOGIN RDP: runneradmin"
+          Write-Host "HASLO RDP: TwojeMocneHaslo123!"
           Write-Host "=========================================="
 
       - name: Podtrzymanie sesji (6 godzin)
