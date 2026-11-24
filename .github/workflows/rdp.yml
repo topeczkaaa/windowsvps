@@ -1,0 +1,41 @@
+name: Windows RDP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Konfiguracja Ngrok i RDP
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+
+          $Password = ConvertTo-SecureString "TwojeMocneHaslo123!" -AsPlainText -Force
+          Set-LocalUser -Name "runneradmin" -Password $Password
+
+          Invoke-WebRequest -Uri "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip" -OutFile "ngrok.zip"
+          Expand-Archive -Path "ngrok.zip" -DestinationPath "."
+
+          .\ngrok.exe config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+          Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389"
+
+      - name: Odczyt adresu IP i portu
+        run: |
+          Start-Sleep -Seconds 5
+          $tunnels = (Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels").tunnels
+          $public_url = $tunnels[0].public_url
+          Write-Host "=========================================="
+          Write-Host "ADRES DO ZDALNEGO PULPITU:"
+          Write-Host $public_url
+          Write-Host "LOGIN: runneradmin"
+          Write-Host "HASLO: TwojeMocneHaslo123!"
+          Write-Host "=========================================="
+
+      - name: Podtrzymanie sesji (6 godzin)
+        run: |
+          Start-Sleep -Seconds 21600
