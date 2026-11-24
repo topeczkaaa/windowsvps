@@ -22,11 +22,11 @@ jobs:
           Expand-Archive -Path "ngrok.zip" -DestinationPath "."
 
           .\ngrok.exe config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
-          Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389 --log=stdout" -WindowStyle Hidden
+          Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389 --log=stdout --log-format=term" -RedirectStandardOutput "ngrok.log" -RedirectStandardError "ngrok_err.log"
 
       - name: Odczyt adresu IP i portu
         run: |
-          $maxAttempts = 15
+          $maxAttempts = 10
           $attempt = 0
           $public_url = $null
 
@@ -39,12 +39,15 @@ jobs:
                       $public_url = $response.tunnels[0].public_url
                   }
               } catch {
-                  Write-Host "Oczekiwanie na tunel Ngrok... (proba $attempt/$maxAttempts)"
+                  Write-Host "Oczekiwanie na tunel Ngrok... ($attempt/$maxAttempts)"
               }
           }
 
           if ([string]::IsNullOrEmpty($public_url)) {
-              Write-Error "Nie udalo sie zestawic tunelu Ngrok. Sprawdz czy NGROK_AUTH_TOKEN jest poprawny."
+              Write-Host "=== LOGI NGROK ==="
+              if (Test-Path "ngrok.log") { Get-Content "ngrok.log" }
+              if (Test-Path "ngrok_err.log") { Get-Content "ngrok_err.log" }
+              Write-Error "Nie udalo sie zestawic tunelu."
               exit 1
           }
 
